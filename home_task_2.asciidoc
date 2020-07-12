@@ -1,0 +1,618 @@
++*In[1]:*+
+[source, ipython3]
+----
+from bs4 import BeautifulSoup as bs
+import requests as r
+from pprint import pprint
+import pandas as pd
+----
+
+= Парсинг HH.ru
+
+Создается список, в который в дальнейшем будут включаться id добавленных
+объектов
+
+
++*In[2]:*+
+[source, ipython3]
+----
+list_id = []
+----
+
+Создается датафрейм, который будет содержать информацию о вакансиях
+
+
++*In[3]:*+
+[source, ipython3]
+----
+data_vacancy = pd.DataFrame(columns=['ID', 'Название вакансии', 'Интнернет-портал', 'Ссылка на вакансию', 'название компании', 'Ссылка на компанию', 'ЗП (от)', 'ЗП (до)', 'Валюта'])
+----
+
+Создается переменная, содержащая ссылку на поисковую страницу вакансии
+
+
++*In[4]:*+
+[source, ipython3]
+----
+req_link = 'https://hh.ru/search/vacancy?area=1&st=searchVacancy&text=Data+science&fromSearch=true&from=suggest_post'
+----
+
+
++*In[5]:*+
+[source, ipython3]
+----
+header = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36', 'Accept': '*/*'}
+----
+
+
++*In[6]:*+
+[source, ipython3]
+----
+response = r.get(req_link, headers=header).text
+----
+
+
++*In[7]:*+
+[source, ipython3]
+----
+soup = bs(response, 'lxml')
+----
+
+Создается переменная last_page, содержащая информацию о числе страниц с
+вакансиями, и в диапазоне которого будет проводится поиск
+
+
++*In[8]:*+
+[source, ipython3]
+----
+last_page = int(soup.find_all('a', {'class': 'bloko-button HH-Pager-Control'})[-1]['data-page'])
+----
+
+Создаем счетчик, чтобы в дальнейшем добавлять указатель на положение в
+датафрейме с вакансиями
+
+
++*In[9]:*+
+[source, ipython3]
+----
+i = 0
+----
+
+
++*In[10]:*+
+[source, ipython3]
+----
+for n in range(last_page):                    # создан цикл, который пробегает по страницам hh.ru с нужным запросом
+    
+                                              # Создается переменная vacancies_block_hh содержащая объект soup
+                                              # с блоками объявлений. Далее создается переменная vacancies_list_hh
+                                              # содержащая список необходимых для парсинга тегов
+    
+    
+    vacancies_block_hh = soup.find('div', {'class': 'vacancy-serp'})
+    vacancies_list_hh = vacancies_block_hh.find_all('div', {'class': 'vacancy-serp-item'})
+      
+    
+    
+    for vacancy in vacancies_list_hh:         # создан цикл, который пробегает по всем блокам вакансий на текущей странице вакансий
+
+        
+                                              # Извлекаем ссылку на вакансию и извлекаем ID из ссылки
+                                   
+
+        ref_vacancy = vacancy.find('a', {'class': 'bloko-link HH-LinkModifier'})['href']
+        id = vacancy.find('a', {'class': 'bloko-link HH-LinkModifier'})['href'][22:30]
+        
+                                              # Проверка наличия ID в датафрейме, если такой ID имеется, то пропускаем
+                                              # дальнейший код, иначе ID добавляется в список с ID
+                                              # и продолжается сбор данных
+        
+        if id in list_id:
+         
+            continue
+        
+        list_id.append(id)
+                                              # Т.к. ID прошел проверку, начинаем сбор и обратоку
+                                              # по текущему блоку вакансии
+
+                                              # далее создаются переменные:
+                                              # зарплата (от), зарплата (до), валюта, название вакансии
+        
+        pay_untill = ''
+        pay_after = ''
+        currency = ''
+        name_vacancy = vacancy.find('a', {'class': 'bloko-link HH-LinkModifier'}).getText()
+
+                                               # Создается переменная name_company, чтобы в дальнейшем проверить,
+                                               # что данный тег не пустой
+      
+        
+        name_company = vacancy.find('a', {'class': 'bloko-link bloko-link_secondary'})
+        
+                                                # Осуществляем проверку данного тега на то, что он не пустой и в таком
+                                                # случае берем из него название компании и ссылку на описание компании
+                                                # иначе, т.е. если тег пустой, пропускаем дальнейшее извелечение данных        
+        
+        if name_company is not None:
+            
+            name_company = vacancy.find('a', {'class': 'bloko-link bloko-link_secondary'}).getText()
+            ref_company = 'https://hh.ru/' + vacancy.find('a', {'class': 'bloko-link bloko-link_secondary'})['href']
+        
+        else:
+            
+            continue
+            
+                                                # i увеличивается на единицу
+        
+        i += 1        
+        
+                                                # создается переменная, содержащая информацию о ЗП. Информация
+                                                # находится в неочищенном от предлогов, пробелов, дефисов виде
+        
+        untreated_pay = vacancy.find('div', {'class': 'vacancy-serp-item__sidebar'}).getText()      
+        
+               
+                                                # далее идет обработка зарплаты в неочищенном виде
+                
+                                                # обработка информации о ЗП, содержащей "-", эта информациия содержит как ЗП (от), так и ЗП (до)
+       
+        if '-' in untreated_pay:     
+
+            
+            for el in untreated_pay[:untreated_pay.index('-')]:     # перебор символов до "-"
+
+                if el.isdigit():
+
+                    pay_untill = f'{pay_untill}{el}'     # формирование ЗП в виде строки
+
+                    
+            for el in untreated_pay[untreated_pay.index('-')+1:]:    # Перебор символов после "-"
+
+                
+                if el.isdigit():
+
+                    pay_after = f'{pay_after}{el}'       # формирование ЗП в виде строки
+
+                    
+                if not el.isdigit() and el != " ":       # ввод условия по которому обрабатывается только валюта
+
+                    currency = f'{currency}{el}'         # формирование валюты в виде строки
+
+                    
+            pay_untill, pay_after = int(pay_untill), int(pay_after)      # перевод валюты в численное значение
+            
+            
+        
+                                                 # обработка информации о ЗП, в которой содержится информации о ЗП (от)
+
+
+        if untreated_pay[:2] == 'от':
+
+            
+             for el in untreated_pay[3:]:
+
+                    
+                if el.isdigit():
+
+                    pay_after = f'{pay_after}{el}'
+                    pay_untill = 'Null'
+
+                    
+                if not el.isdigit() and el != " ":
+
+                    currency = f'{currency}{el}'
+                    
+        
+                                                 # обработка информации о ЗП, в которой содержится информации о ЗП (до)
+        
+
+        if untreated_pay[:2] == 'до':
+
+            
+            for el in untreated_pay[3:]:
+
+                
+                if el.isdigit():
+
+                    pay_untill = f'{pay_untill}{el}'
+                    pay_after = 'Null'
+
+                    
+                if not el.isdigit() and el != " ":
+
+                    currency = f'{currency}{el}'
+                    
+        
+                                                 # обработка информации о ЗП, в случае когда она отсутствует 
+        
+
+        if untreated_pay == '':
+
+            pay_untill = 'Null'
+            pay_after = 'Null'
+            currency = 'Null'
+
+        
+                                               # передается строке датафрейма с индексом i в виде списка со значеними искомой информации  
+        
+
+        data_vacancy.loc[i] = [id, name_vacancy, 'hh.ru', ref_vacancy, name_company, ref_company, pay_untill, pay_after, currency]
+    
+    
+                                               # после парсинга текущей страницы, производится переход на следующую страницу
+                                               # находится окончание ссылки, ссылающаяся на следующую страницу
+    
+    next_page_ref = soup.find('a', {'class': 'bloko-button HH-Pager-Controls-Next HH-Pager-Control'})['href']
+    
+    
+                                               # формируется ссылка на следующую страницу после той, которую мы обработали
+    
+    req_link = f'https://hh.ru{next_page_ref}'
+    
+    
+                                               # формируется текст нового запроса
+    
+    response = r.get(req_link, headers=header).text
+    
+    
+                                               # из текста нового запроса формируется новый объект soup
+    
+    soup = bs(response, 'lxml')
+    
+----
+
+
++*In[11]:*+
+[source, ipython3]
+----
+data_vacancy
+# data_vacancy.to_excel('data_vacancy_09.07.xlsx', index=False)
+----
+
+
++*Out[11]:*+
+----
+[cols=",,,,,,,,,",options="header",]
+|=======================================================================
+| |ID |Название вакансии |Интнернет-портал |Ссылка на вакансию |название
+компании |Ссылка на компанию |ЗП (от) |ЗП (до) |Валюта
+|1 |37844601 |Machine Learning Developer |hh.ru
+|https://hh.ru/vacancy/37844601?query=Data%20sc...
+|HeadHunter::Analytics/Data Science
+|https://hh.ru//employer/1455?dpt=hh-1455-ds |Null |Null |Null
+
+|2 |37854637 |Data Analyst (Аналитик данных) |hh.ru
+|https://hh.ru/vacancy/37854637?query=Data%20sc... |ЗАО ОКБ
+|https://hh.ru//employer/2129243 |Null |Null |Null
+
+|3 |37711158 |Junior Machine Learning Engineer |hh.ru
+|https://hh.ru/vacancy/37711158?query=Data%20sc... |ООО Claire&Clarté
+|https://hh.ru//employer/2370983 |140000 |Null |руб.
+
+|4 |37521387 |Python Data Scientist |hh.ru
+|https://hh.ru/vacancy/37521387?query=Data%20sc... |Web Interactive
+World |https://hh.ru//employer/5552 |Null |150000 |руб.
+
+|5 |37036573 |Data Engineer - Sales Home |hh.ru
+|https://hh.ru/vacancy/37036573?query=Data%20sc... |Deutsche Bank
+Technology Center |https://hh.ru//employer/1641540 |Null |220000 |руб.
+
+|... |... |... |... |... |... |... |... |... |...
+
+|245 |37570789 |Руководитель аналитики / Team Lead (внедрение ... |hh.ru
+|https://hh.ru/vacancy/37570789?query=Data%20sc... |Polymedia
+|https://hh.ru//employer/3070 |Null |Null |Null
+
+|246 |37570177 |Разработчик ETL (3й линия сопровождения) |hh.ru
+|https://hh.ru/vacancy/37570177?query=Data%20sc... |Сбербанк для
+экспертов |https://hh.ru//employer/3529?dpt=3529-3529-prof |Null |Null
+|Null
+
+|247 |37540463 |Team lead Data Science |hh.ru
+|https://hh.ru/vacancy/37540463?query=Data%20sc... |Университет
+Иннополис |https://hh.ru//employer/1160188 |180000 |300000 |руб.
+
+|248 |36245249 |Аналитик Data Science |hh.ru
+|https://hh.ru/vacancy/36245249?query=Data%20sc... |GlowByte Consulting
+|https://hh.ru//employer/64474 |Null |Null |Null
+
+|249 |37562773 |Эксперт по видеоаналитике |hh.ru
+|https://hh.ru/vacancy/37562773?query=Data%20sc... |Норникель
+|https://hh.ru//employer/740 |Null |Null |Null
+|=======================================================================
+
+249 rows × 9 columns
+----
+
+= Парсинг superjob.ru
+
+
++*In[12]:*+
+[source, ipython3]
+----
+req_link = 'https://www.superjob.ru/vacancy/search/?keywords=Data%20science&geo%5Bt%5D%5B0%5D=4'
+----
+
+
++*In[13]:*+
+[source, ipython3]
+----
+response = r.get(req_link, headers=header).text
+----
+
+
++*In[14]:*+
+[source, ipython3]
+----
+soup = bs(response, 'lxml')
+----
+
+Т.к. на superjob.ru может быть не больше одного листа с вакансиями
+предусмотрено условие, проверяющее что кнопка далее имеется. Иначе цикл
+будет повторяться один раз
+
+
++*In[15]:*+
+[source, ipython3]
+----
+last_page = None
+
+
+if soup.find('span', {'class': '_3IDf'}):
+    
+    last_page = soup.find('span', {'class': '_3IDf'}).getText()
+
+else:
+    
+    last_page = 1
+----
+
+
++*In[16]:*+
+[source, ipython3]
+----
+last_page
+----
+
+
++*Out[16]:*+
+----1----
+
+
++*In[17]:*+
+[source, ipython3]
+----
+for n in range(last_page):                     # создан цикл, который пробегает по страницам superjob.ru с нужным запросом
+
+        
+    
+    vacancies_block_sj = soup.find('div', {'class': '_1ID8B'})
+    vacancies_list_sj = vacancies_block_sj.find_all('div', {'class': 'f-test-vacancy-item'})
+    
+
+    for vacancy in vacancies_list_sj:         # создан цикл, который пробегает по всем блокам вакансий на текущей странице вакансий
+        
+
+
+        ref_vacancy = 'https://www.superjob.ru/' + vacancy.find('a', {'class': 'icMQ_'})['href']
+        id = ref_vacancy[-13:-5]
+
+        
+        if id in list_id:
+         
+            continue
+        
+        list_id.append(id)
+                                              # Т.к. ID прошел проверку, начинаем сбор и обратоку
+                                              # по текущему блоку вакансии
+
+                                              # далее создаются переменные:
+                                              # зарплата (от), зарплата (до), валюта, название вакансии        
+        
+        
+        name_company = vacancy.find('span', {'class': 'f-test-text-vacancy-item-company-name'})
+        
+        
+        if name_company is not None:
+            
+            name_company = vacancy.find('span', {'class': 'f-test-text-vacancy-item-company-name'}).getText()
+            ref_company = 'https://www.superjob.ru/' + vacancy.find('a', {'class': '_205Zx'})['href']
+        
+        else:
+            
+            continue
+                                              # i увеличивается на единицу
+        
+        i += 1
+            
+        pay_untill = ''
+        pay_after = ''
+        currency = ''
+        name_vacancy = vacancy.find('a', {'class': 'icMQ_'}).getText()
+        
+        untreated_pay = vacancy.find('span', {'class': 'PlM3e'}).getText().replace(u'\xa0', u' ')
+        
+        
+                                              # далее идет обработка зарплаты в неочищенном виде
+        
+                                              # обработка информации о ЗП, содержащей "-", эта информациия содержит как ЗП (от), так и ЗП (до)
+    
+    
+        if '-' in untreated_pay:     
+            
+            
+
+            for el in untreated_pay[:untreated_pay.index('-')]:     # перебор символов до "-"
+                
+
+                if el.isdigit():
+
+                    pay_untill = f'{pay_untill}{el}'     # формирование ЗП в виде строки
+                    
+                    
+
+            for el in untreated_pay[untreated_pay.index('-')+1 :]:    # Перебор символов после "-"
+                
+
+                if el.isdigit():
+
+                    pay_after = f'{pay_after}{el}'       # формирование ЗП в виде строки
+                    
+
+                if not el.isdigit() and el != " ":       # ввод условия по которому обрабатывается только валюта
+
+                    currency = f'{currency}{el}'         # формирование валюты в виде строки
+                    
+                    
+
+            pay_untill, pay_after = int(pay_untill), int(pay_after)      # перевод валюты в численное значение
+            
+            
+        
+                                              # обработка информации о ЗП, в которой содержится информации о ЗП (от)
+
+
+        if untreated_pay[:2] == 'от':
+            
+
+             for el in untreated_pay[3:]:
+                    
+
+                if el.isdigit():
+
+                    pay_after = f'{pay_after}{el}'
+                    pay_untill = 'Null'
+                    
+
+                if not el.isdigit() and el != " ":
+
+                    currency = f'{currency}{el}'
+                    
+        
+                                              # обработка информации о ЗП, в которой содержится информации о ЗП (до)
+        
+
+        if untreated_pay[:2] == 'до':
+            
+
+            for el in untreated_pay[3:]:
+                
+
+                if el.isdigit():
+
+                    pay_untill = f'{pay_untill}{el}'
+                    pay_after = 'Null'
+                    
+
+                if not el.isdigit() and el != " ":
+
+                    currency = f'{currency}{el}'
+                    
+        
+                                              # обработка информации о ЗП, в случае когда она отсутствует 
+        
+
+        if untreated_pay == 'По договорённости':
+
+            pay_untill = 'Null'
+            pay_after = 'Null'
+            currency = 'Null'
+
+        
+                                              # передается строке датафрейма с индексом i в виде списка со значеними искомой информации  
+        
+
+        data_vacancy.loc[i] = [id, name_vacancy, 'superjob.ru', ref_vacancy, name_company, ref_company, pay_untill, pay_after, currency]
+    
+    
+                                              # после парсинга текущей страницы, производится переход на следующую страницу
+                                              # находится окончание ссылки на следующую страницу
+    
+    if last_page != 1:
+        
+        next_page_ref = soup.find('a', {'class': 'f-test-link-Dalshe'})['href']
+    
+    
+                                              # формируется ссылка на следующую страницу после той, которую мы обработали
+    
+    req_link = f'https://www.superjob.ru/{next_page_ref}'
+    
+    
+                                              # формируется текст нового запроса
+    
+    response = r.get(req_link, headers=header).text
+    
+    
+                                              # из текста нового запроса формируется новый объект soup
+    
+    soup = bs(response, 'lxml')
+----
+
+
++*In[18]:*+
+[source, ipython3]
+----
+data_vacancy
+----
+
+
++*Out[18]:*+
+----
+[cols=",,,,,,,,,",options="header",]
+|=======================================================================
+| |ID |Название вакансии |Интнернет-портал |Ссылка на вакансию |название
+компании |Ссылка на компанию |ЗП (от) |ЗП (до) |Валюта
+|1 |37844601 |Machine Learning Developer |hh.ru
+|https://hh.ru/vacancy/37844601?query=Data%20sc...
+|HeadHunter::Analytics/Data Science
+|https://hh.ru//employer/1455?dpt=hh-1455-ds |Null |Null |Null
+
+|2 |37854637 |Data Analyst (Аналитик данных) |hh.ru
+|https://hh.ru/vacancy/37854637?query=Data%20sc... |ЗАО ОКБ
+|https://hh.ru//employer/2129243 |Null |Null |Null
+
+|3 |37711158 |Junior Machine Learning Engineer |hh.ru
+|https://hh.ru/vacancy/37711158?query=Data%20sc... |ООО Claire&Clarté
+|https://hh.ru//employer/2370983 |140000 |Null |руб.
+
+|4 |37521387 |Python Data Scientist |hh.ru
+|https://hh.ru/vacancy/37521387?query=Data%20sc... |Web Interactive
+World |https://hh.ru//employer/5552 |Null |150000 |руб.
+
+|5 |37036573 |Data Engineer - Sales Home |hh.ru
+|https://hh.ru/vacancy/37036573?query=Data%20sc... |Deutsche Bank
+Technology Center |https://hh.ru//employer/1641540 |Null |220000 |руб.
+
+|... |... |... |... |... |... |... |... |... |...
+
+|257 |33932771 |Software Developer C++ |superjob.ru
+|https://www.superjob.ru//vakansii/software-dev... |Parallels
+|https://www.superjob.ru//clients/korel-rus-352... |Null |Null |Null
+
+|258 |34040209 |Ведущий специалист по данным |superjob.ru
+|https://www.superjob.ru//vakansii/veduschij-sp... |EPAM Systems
+|https://www.superjob.ru//clients/epam-systems-... |Null |Null |Null
+
+|259 |34039994 |Android Developer (Java/Kotlin) |superjob.ru
+|https://www.superjob.ru//vakansii/android-deve... |EPAM Systems
+|https://www.superjob.ru//clients/epam-systems-... |Null |Null |Null
+
+|260 |34079827 |Исполнительный директор в IT |superjob.ru
+|https://www.superjob.ru//vakansii/ispolnitelny... |Сбербанк России
+|https://www.superjob.ru//clients/sberbank-ross... |Null |Null |Null
+
+|261 |34114514 |Data Scientist |superjob.ru
+|https://www.superjob.ru//vakansii/data-scienti... |Национальная Медиа
+Группа |https://www.superjob.ru//clients/nacionalnaya-... |Null |Null
+|Null
+|=======================================================================
+
+261 rows × 9 columns
+----
+
+
++*In[ ]:*+
+[source, ipython3]
+----
+
+----
