@@ -1,14 +1,5 @@
 # Methods_of_collecting_data_geekbrains
 
-Task_2_parsing_hh_superjob.asciidoc 
-Task_3_BS_make_base_vacancies_data_science.py
-Task_3_special_query.py
-Task_4_Xpath_make_base_news.py
-Task_4_query.py
-Task_5_selenium_make_base_mail.py
-Task_5_query.py
-
-
 --Task_2_parsing_hh_superjob.asciidoc
 
 Сбор данных результата запроса интерисуемой вакансии / специальности в hh.ru и superjob.ru.
