@@ -2,7 +2,7 @@
 
 --Task_2_parsing_hh_superjob.asciidoc
 
-Сбор данных результата запроса интерисуемой вакансии / специальности в hh.ru и superjob.ru.
+Сбор данных результата запроса интересуемой вакансии / специальности в hh.ru и superjob.ru.
 Результат предоставляется в DataFrame
 
 Технология: BeautifulSoup, Pandas
